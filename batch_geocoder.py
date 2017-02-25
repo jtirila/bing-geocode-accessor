@@ -12,10 +12,10 @@ from StringIO import StringIO
 import xml.etree.ElementTree as ET
 
 
-# TODO: * Some secrets have been removed from here and stuff needs to be migrated to e.g. environment variables. 
-# TODO:   So the code below is not functional as is, further work is needed.  
-# TODO: * Also, there are a lot of broken style conventions etc. 
-# TODO: * Also, some variables are poorly / misleadingly named, need to change those. 
+# TODO: * Some secrets have been removed from here and stuff needs to be migrated to e.g. environment variables.
+# TODO:   So the code below is not functional as is, further work is needed.
+# TODO: * Also, there are a lot of broken style conventions etc.
+# TODO: * Also, some variables are poorly / misleadingly named, need to change those.
 
 with open(TEST_CSV_RESPONSE_PATH) as csvfile:
     TEST_CSV_RESPONSE_DATA = csvfile.read()
@@ -75,8 +75,8 @@ def _read_example_data(type="csv"):
     with open(EXAMPLE_DATA_PATH, 'r') as csv_file:
         raw_data = pandas.read_csv(StringIO(csv_file.read()), delimiter=";", header=0)
 
-        # TODO: maybe the unused ones can be dropped to remove bloat and just the relevant ones included 
-        # TODO: in the structure, need to check this out. 
+        # TODO: maybe the unused ones can be dropped to remove bloat and just the relevant ones included
+        # TODO: in the structure, need to check this out.
         columns = ["Id", "GeocodeRequest/Culture", "GeocodeRequest/Query",
                    "GeocodeRequest/Address/AddressLine", "GeocodeRequest/Address/AdminDistrict",
                    "GeocodeRequest/Address/CountryRegion", "GeocodeRequest/Address/AdminDistrict2",
@@ -101,10 +101,10 @@ def _read_example_data(type="csv"):
         df["GeocodeRequest/Address/AddressLine"] = raw_data['streetAddress'].replace(numpy.nan, "", regex=True)
         df["GeocodeRequest/Address/Locality"] = raw_data['municipality'].replace(numpy.nan, "", regex=True)
 
-        # For now, hard code country instead of reading it from source data. 
+        # For now, hard code country instead of reading it from source data.
         df["GeocodeRequest/Address/CountryRegion"] = 'Finland'
 
-        # Modifications needed to make this Python 3.x compatible. 
+        # Modifications needed to make this Python 3.x compatible.
         df['Id'] = map(lambda x: str(x), range(len(df)))
         return type_form_request[type](df)
 
@@ -127,10 +127,10 @@ def _read_new_response(keyless_url):
 
 def _coordinate_overall_response(url, data, mock, type):
     """
-    This creates the job and keeps looping to read results. The mock parameter is a development-time 
+    This creates the job and keeps looping to read results. The mock parameter is a development-time
     hack so that the bing service need not be hit every time if focusing on some other parts of the code
 
-    Returns the response object. 
+    Returns the response object.
     """
     if mock:
         return TEST_BING_RESPONSES[type]
