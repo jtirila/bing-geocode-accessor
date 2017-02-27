@@ -68,7 +68,7 @@ def _form_request_xml(df):
     xml = ['<?xml version="1.0" encoding="utf-8"?>',
            '<GeocodeFeed xmlns = "http://schemas.microsoft.com/search/local/2010/5/geocode" Version = "2.0">']
     for row in df.iterrows():
-        xml.append('  <GeocodeEntity Id="{}" xmlns="http://schemas.microsoft.com/search/local/2010/5/geocode">'.format(str(int(row[1]['Id']) + 1).zfill(3)))
+        xml.append('  <GeocodeEntity Id="{}" xmlns="http://schemas.microsoft.com/search/local/2010/5/geocode">'.format(str(int(row[1]['Id'])).zfill(3)))
         xml.append('    <GeocodeRequest Culture="fi-FI" IncludeNeighborhood="0">')
         xml.append('      <Address AddressLine="{}" AdminDistrict="" Locality="{}" PostalCode="{}" />'.format(
             row[1]["GeocodeRequest/Address/AddressLine"],
@@ -112,6 +112,7 @@ def _read_example_data():
                "GeocodeResponse/GeocodePoints", "StatusCode", "FaultReason", "TraceId"]
 
     df = pandas.DataFrame(columns=columns)
+    df['Id'] = raw_data['id']
     df["GeocodeRequest/Address/PostalCode"] = raw_data['postcode'].apply(lambda x: str(x).zfill(5))
     df["GeocodeRequest/Culture"] = 'fi_FI'
     df["GeocodeRequest/Address/AddressLine"] = raw_data['streetAddress'].replace(numpy.nan, "", regex=True)
@@ -119,11 +120,10 @@ def _read_example_data():
 
     # For now, hard code country instead of reading it from source data.
     df["GeocodeRequest/Address/CountryRegion"] = 'Finland'
-    df['Id'] = map(lambda x: str(x), range(len(df)))
     return df
 
 
-def _read_resource(r, mock, type):
+def _read_resource(r):
     json_resp = json.loads(r.content)
     return next(json_snippet['resources'][0] for json_snippet in json_resp['resourceSets'] if
                 'resources' in json_snippet)
@@ -153,7 +153,7 @@ def _create_geocoding_job(url, request_payload, mock):
     return requests.post(url, data=request_payload, headers={'content-type': 'text/plain, charset=UTF-8'})
 
 
-def _loop_for_results(r, mock, type):
+def _loop_for_results(r, mock, payload_type):
 
     """Inputs:
      - r: a response object containing bing status payload.
@@ -168,7 +168,7 @@ def _loop_for_results(r, mock, type):
     results waiting to block subsequent processing. It may be feasible to use some other async method
     in some scenarios. This will do for me, however."""
 
-    resource = _read_resource(r, mock, type)
+    resource = _read_resource(r)
     status = _read_status(resource)
 
     # TODO: check if this is robust enough... find the resources key and corresponding value (array), pick the
@@ -178,16 +178,16 @@ def _loop_for_results(r, mock, type):
     while status != 'Completed':
         print("Starting to wait and then fetch the resources")
         time.sleep(LOOP_WAIT_INTERVAL_SECONDS)
-        resource = _read_resource(_read_new_response(resource['links'][0]['url']), mock, type)
+        resource = _read_resource(_read_new_response(resource['links'][0]['url']))
         status = _read_status(resource)
 
     if mock:
-        return TEST_BING_DATA_RESPONSES[type]
+        return TEST_BING_DATA_RESPONSES[payload_type]
     return _read_new_response(next(link['url'] for link in resource['links'] if (link['role'] == 'output' and
                                                                          link['name'] == "succeeded")))
 
 
-def _persist_bing_response(r, type, write_bing_response):
+def _persist_bing_response(r, payload_type, write_bing_response):
     """
     This is just a development-time helper function to persist the responses from Bing for dev needs. Will be removed
     later on.
@@ -197,15 +197,15 @@ def _persist_bing_response(r, type, write_bing_response):
     """
     if not write_bing_response:
         return
-    with open(os.path.join(THIS_FILE_DIR, 'test_data', "bing_example_response.{}".format(type)), "w") as outputfile:
+    with open(os.path.join(THIS_FILE_DIR, 'test_data', "bing_example_response.{}".format(payload_type)), "w") as outputfile:
         outputfile.write(r.content)
 
 
-def coordinate_example_job(type="csv", mock=False, write_bing_response=False):
+def coordinate_example_job(payload_type="csv", mock=False, write_bing_response=False):
     """
     An example workflow to demonstrate how the current code can be used.
 
-    :param type: either 'csv' or 'xml'
+    :param payload_type: either 'csv' or 'xml'
     :param mock: Whether to just pretend to perform the Bing request and in reality just return previously persisted
                  values or not
     :param write_bing_response:  whether to persist bing response or not
@@ -214,17 +214,17 @@ def coordinate_example_job(type="csv", mock=False, write_bing_response=False):
     TODO: the returned subset is currently hard coded, needs to be made configurable
     """
 
-    url = BING_API_URL_TEMPLATE.format(type)
+    url = BING_API_URL_TEMPLATE.format(payload_type)
     data = _read_example_data()
-    request_payload = type_form_request[type](data)
+    request_payload = type_form_request[payload_type](data)
 
     r = _create_geocoding_job(url, request_payload, mock)
-    results_r = _loop_for_results(r, mock, type)
-    _persist_bing_response(results_r, type, write_bing_response)
-    return process_response_by_type[type](results_r)
+    results_r = _loop_for_results(r, mock, payload_type)
+    _persist_bing_response(results_r, payload_type, write_bing_response)
+    return process_response_by_type[payload_type](results_r)
 
 
 if __name__ == "__main__":
     type = "csv"
-    data = coordinate_example_job(type=type, mock=False, write_bing_response=False)
+    data = coordinate_example_job(payload_type=type, mock=False, write_bing_response=True)
     print data
