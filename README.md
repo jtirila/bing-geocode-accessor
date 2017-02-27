@@ -3,7 +3,7 @@ PoC code to use Bing Spatial Services geocoding API using Python.
 
 This will be very much just exploratory / PoC code to learn how to use the API,
 nothing fancy or production ready. Also, this will probably lack genericity and
-be rather written for some individual case or a small set of cases in mind. 
+be rather written for some individual case or a small set of cases in mind.
 
 I am aware of the [Geocoder Python package](https://pypi.python.org/pypi/geocoder).
 
