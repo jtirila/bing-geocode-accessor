@@ -10,6 +10,9 @@ from collections import namedtuple
 from StringIO import StringIO
 import xml.etree.ElementTree as ET
 
+# TODO: keeping this file for reference for now, however all real processing should be performed using the GeocodingJob
+# TODO: class
+
 LOOP_WAIT_INTERVAL_SECONDS = 10
 BING_API_KEY = os.environ["BING_API_KEY"]
 BING_API_URL_TEMPLATE = "http://spatial.virtualearth.net/REST/v1/Dataflows/Geocode?input={}" + "&key={}".format(BING_API_KEY)

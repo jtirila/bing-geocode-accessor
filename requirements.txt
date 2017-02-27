@@ -1,2 +1,5 @@
 requests
 pandas
+enum
+nose
+requests-mock
