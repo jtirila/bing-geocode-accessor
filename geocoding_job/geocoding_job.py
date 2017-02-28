@@ -8,30 +8,55 @@ import requests
 from StringIO import StringIO
 
 
-class GeocodingException(Exception):
-    pass
-
-
-class GCStatus(enum.Enum):
-    initialized = "initialized"
-    job_created = "job_created"
-    pending = "pending"
-    bing_completed = "bing_completed"
-    result_request_completed = "result_request_completed"
-    completed = "completed"
-    error = "error"
-
-
 class GeocodingJob:
 
-    def __init__(self, data):
-        self.request_payload = self._build_bing_request_payload(data)
-        self.bing_key = os.environ["BING_API_KEY"]
-        self.status = GCStatus.initialized
-        self.create_bing_job_url= "http://spatial.virtualearth.net/REST/v1/Dataflows/Geocode?input=csv" +\
-                                  "&key={}".format(self.bing_key)
-        self.loop_wait_interval_seconds = 10
+    # Define some class level types and constants internal to GeocodingJob:
+    class GeocodingException(Exception):
+        """GeocodingJob's custom error class"""
+        pass
 
+    class GCStatus(enum.Enum):
+        """
+        An enum class that defines the possible statuses in GeocodingJob
+        """
+        initialized = "initialized"
+        job_created = "job_created"
+        pending = "pending"
+        bing_completed = "bing_completed"
+        result_request_completed = "result_request_completed"
+        completed = "completed"
+        error = "error"
+
+    BING_CSV_HEADERS = ["Id", "GeocodeRequest/Culture", "GeocodeRequest/Query",
+                        "GeocodeRequest/Address/AddressLine", "GeocodeRequest/Address/AdminDistrict",
+                        "GeocodeRequest/Address/CountryRegion", "GeocodeRequest/Address/AdminDistrict2",
+                        "GeocodeRequest/Address/FormattedAddress", "GeocodeRequest/Address/Locality",
+                        "GeocodeRequest/Address/PostalCode", "GeocodeRequest/Address/PostalTown",
+                        "GeocodeRequest/ConfidenceFilter/MinimumConfidence",
+                        "ReverseGeocodeRequest/IncludeEntityTypes", "ReverseGeocodeRequest/Location/Latitude",
+                        "ReverseGeocodeRequest/Location/Longitude", "GeocodeResponse/Address/AddressLine",
+                        "GeocodeResponse/Address/AdminDistrict", "GeocodeResponse/Address/CountryRegion",
+                        "GeocodeResponse/Address/AdminDistrict2", "GeocodeResponse/Address/FormattedAddress",
+                        "GeocodeResponse/Address/Locality", "GeocodeResponse/Address/PostalCode",
+                        "GeocodeResponse/Address/PostalTown", "GeocodeResponse/Address/Neighborhood",
+                        "GeocodeResponse/Address/Landmark", "GeocodeResponse/Confidence", "GeocodeResponse/Name",
+                        "GeocodeResponse/EntityType", "GeocodeResponse/MatchCodes", "GeocodeResponse/Point/Latitude",
+                        "GeocodeResponse/Point/Longitude", "GeocodeResponse/BoundingBox/EastLongitude",
+                        "GeocodeResponse/BoundingBox/NorthLatitude", "GeocodeResponse/BoundingBox/WestLongitude",
+                        "GeocodeResponse/BoundingBox/SouthLatitude", "GeocodeResponse/QueryParseValues",
+                        "GeocodeResponse/GeocodePoints", "StatusCode", "FaultReason", "TraceId"]
+
+    LOOP_WAIT_INTERVAL_SECONDS = 10
+
+    def __init__(self, data, bing_key=os.environ["BING_API_KEY"]):
+        assert bing_key is not None
+        self._request_payload = self._build_bing_request_payload(data)
+        self._bing_key = bing_key
+        self.status = self.GCStatus.initialized
+        self._create_bing_job_url = "http://spatial.virtualearth.net/REST/v1/Dataflows/Geocode?input=csv" +\
+                                   "&key={}".format(self._bing_key)
+
+    # Public interface
     def fetch_results(self):
         """
         The public method that coordinates the process of fetching the results from Bing.
@@ -39,42 +64,43 @@ class GeocodingJob:
         """
         r = self._create_geocoding_job()
         response = self._loop_for_results(r)
-        if not self.status == GCStatus.result_request_completed:
-            self.status = GCStatus.error
-            raise GeocodingException("Fetching the results failed somehow")
+        if not self.status == self.GCStatus.result_request_completed:
+            self.status = self.GCStatus.error
+            raise self.GeocodingException("Fetching the results failed somehow")
         df = self._process_csv_response(response)
-        self.status = GCStatus.completed
+        self.status = self.GCStatus.completed
         return df
 
+    # Private methods
     def _create_geocoding_job(self):
         """
-        This creates the job and keeps looping to read results. The mock parameter is a development-time
-        hack so that the bing service need not be hit every time if focusing on some other parts of the code
+        Creates the geocoding job.
 
         :return: a requests module response object
         """
 
-        response = requests.post(self.create_bing_job_url, data=self.request_payload,
+        response = requests.post(self._create_bing_job_url, data=self._request_payload,
                                  headers={'content-type': 'text/plain, charset=UTF-8'})
-        self.status = GCStatus.job_created
+        self.status = self.GCStatus.job_created
         return response
 
-
-    def _build_bing_request_payload(self, df):
+    @staticmethod
+    def _build_bing_request_payload(df):
         """
-        :param df: The initial dataframe containing id, streetAddress, municipality and postcode for each record.
+        Converts a dataframe with all the Bing-formatted input data into a properly formatted Bing CSV payload.
+
+        :param df: A formatted dataframe containing the columns relevant for Bing CSV requests
         :return: A Bing request csv formed from the input df
         """
-        # Modifications needed to make this Python 3.x compatible; also, the ID probaby needs to be a little bit more unique
-        # and aso persisted somewhere.
-        csv = self._build_payload_df(df).to_csv(sep=",", header=True, index=False)
+        # Modifications needed to make this Python 3.x compatible; also, the ID probaby needs to be a little bit
+        # more unique and aso persisted somewhere.
+        csv = GeocodingJob._build_payload_df(df).to_csv(sep=",", header=True, index=False)
         return "Bing Spatial Data Services, 2.0\n" + csv
-
 
     @staticmethod
     def _build_payload_df(raw_data):
         """
-        From the input dataframe, build a version that can be used to construct Bing request csv
+        From the raw input dataframe, build a version that can be used to construct Bing request CSV
 
         :param raw_data: The raw input data containing id, streetAddress, municipality and postcode for each record.
         :return: a dataframe formulated to contain Bing headers so that a Bing format payload can be formed from this
@@ -83,28 +109,9 @@ class GeocodingJob:
 
         # TODO: maybe the unused ones can be dropped to remove bloat and just the relevant ones included
         # TODO: in the structure, need to check this out.
-        # TODO: An initial observation is that the csv response will only include the fields listed in the request, which is
-        # TODO: kind of silly, no?
-        columns = ["Id", "GeocodeRequest/Culture", "GeocodeRequest/Query",
-                   "GeocodeRequest/Address/AddressLine", "GeocodeRequest/Address/AdminDistrict",
-                   "GeocodeRequest/Address/CountryRegion", "GeocodeRequest/Address/AdminDistrict2",
-                   "GeocodeRequest/Address/FormattedAddress", "GeocodeRequest/Address/Locality",
-                   "GeocodeRequest/Address/PostalCode", "GeocodeRequest/Address/PostalTown",
-                   "GeocodeRequest/ConfidenceFilter/MinimumConfidence",
-                   "ReverseGeocodeRequest/IncludeEntityTypes", "ReverseGeocodeRequest/Location/Latitude",
-                   "ReverseGeocodeRequest/Location/Longitude", "GeocodeResponse/Address/AddressLine",
-                   "GeocodeResponse/Address/AdminDistrict", "GeocodeResponse/Address/CountryRegion",
-                   "GeocodeResponse/Address/AdminDistrict2", "GeocodeResponse/Address/FormattedAddress",
-                   "GeocodeResponse/Address/Locality", "GeocodeResponse/Address/PostalCode",
-                   "GeocodeResponse/Address/PostalTown", "GeocodeResponse/Address/Neighborhood",
-                   "GeocodeResponse/Address/Landmark", "GeocodeResponse/Confidence", "GeocodeResponse/Name",
-                   "GeocodeResponse/EntityType", "GeocodeResponse/MatchCodes", "GeocodeResponse/Point/Latitude",
-                   "GeocodeResponse/Point/Longitude", "GeocodeResponse/BoundingBox/EastLongitude",
-                   "GeocodeResponse/BoundingBox/NorthLatitude", "GeocodeResponse/BoundingBox/WestLongitude",
-                   "GeocodeResponse/BoundingBox/SouthLatitude", "GeocodeResponse/QueryParseValues",
-                   "GeocodeResponse/GeocodePoints", "StatusCode", "FaultReason", "TraceId"]
-
-        df = pandas.DataFrame(columns=columns)
+        # TODO: An initial observation is that the csv response will only include the fields listed in the request,
+        # TODO:  which is kind of silly, no?
+        df = pandas.DataFrame(columns=GeocodingJob.BING_CSV_HEADERS)
         df['Id'] = raw_data['id']
         df["GeocodeRequest/Address/PostalCode"] = raw_data['postcode'].apply(lambda x: str(x).zfill(5))
         df["GeocodeRequest/Culture"] = 'fi_FI'
@@ -145,7 +152,7 @@ class GeocodingJob:
         :param keyless_url: A Bing url, read from the resource JSON
         :return: a requests module response object
         """
-        return requests.get("{}?key={}".format(keyless_url, self.bing_key))
+        return requests.get("{}?key={}".format(keyless_url, self._bing_key))
 
     def _loop_for_results(self, r):
         """
@@ -154,10 +161,10 @@ class GeocodingJob:
         :param r: a requests module response object containing status information
         :return: a requests module response object containing actual geocoded data
 
-        TODO: no error checking is performed so if something goes wrong, an uncaught exception will be thrown.
-        TODO: this is currently bit of a hack and only suitable for situations where it is OK for the
-        results waiting to block subsequent processing. It may be feasible to use some other async method
-        in some scenarios. This will do for us for the time being, however.
+        TODO: No error checking is performed so if something goes wrong, an uncaught exception will be thrown.
+        TODO: This is currently bit of a hack and only suitable for situations where it is OK for the
+        TODO: results waiting to block subsequent processing. It may be feasible to use some other async method
+        TODO: in some scenarios. This will do for us for the time being, however.
         """
 
         resource = self._read_resource(r)
@@ -169,22 +176,23 @@ class GeocodingJob:
         print("Just about to enter the fetching loop")
         while status != 'Completed':
             if status == 'Pending':
-                self.status == GCStatus.pending
-            time.sleep(self.loop_wait_interval_seconds)
+                self.status == self.GCStatus.pending
+            time.sleep(self.LOOP_WAIT_INTERVAL_SECONDS)
             resource = self._read_resource(self._read_new_response(resource['links'][0]['url']))
             status = self._read_status(resource)
 
-        self.status = GCStatus.bing_completed
+        self.status = self.GCStatus.bing_completed
         response = self._read_new_response(next(link['url'] for link in resource['links'] if
-                                            (link['role'] == 'output' and link['name'] == "succeeded")))
-        self.status = GCStatus.result_request_completed
+                                           (link['role'] == 'output' and link['name'] == "succeeded")))
+        self.status = self.GCStatus.result_request_completed
         return response
 
     @staticmethod
     def _process_csv_response(response):
         """
+        Converts the CSV response from Bing into a dataframe
 
-        :param response: a requests module response object containing the successful Bing response payload
+        :param response: a requests module response object containing the successful Bing CSV response payload
         :return: a dataframe formulated from the payload
 
         TODO: Maybe we don't need to return all of the payload... e.g. the request data could probably be dropped
