@@ -48,8 +48,17 @@ class GeocodingJob:
 
     LOOP_WAIT_INTERVAL_SECONDS = 10
 
-    def __init__(self, data, bing_key=os.environ["BING_API_KEY"]):
-        assert bing_key is not None
+    def __init__(self, data, bing_key=None):
+        """
+        :param data: A pandas dataframe containing the columns 'id', 'streetAddress', 'municipality' and 'postcode'.
+                     It is OK to have some missing values, but Bing *may* fail to geocode such entries.
+        :param bing_key: A valid Bing spatial data API key. Can be omitted in which case an environment variable
+               named BING_API_KEY is required. If both are nonexistent an exception is thrown.
+        """
+        bing_key = bing_key if bing_key is not None else os.environ["BING_API_KEY"]
+        if bing_key is None:
+            raise self.GeocodingException("You didn't provide a Bing API key. " +
+                                          "Either provide the parameter or environment variable")
         self._request_payload = self._build_bing_request_payload(data)
         self._bing_key = bing_key
         self.status = self.GCStatus.initialized
